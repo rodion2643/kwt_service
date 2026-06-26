@@ -4,7 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="KWT Service в Гомеле — ремонт и сервис электротранспорта: электросамокаты, электровелосипеды. Гарантия на работы.">
+  <meta name="kwt-base" content="/kwt_service/">
   <title>KWT Service — Ремонт электротранспорта в Гомеле</title>
+  <link rel="preconnect" href="https://script.google.com">
+  <link rel="dns-prefetch" href="https://script.google.com">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
@@ -189,7 +192,7 @@
         <div class="section__header reveal">
           <span class="section__tag">Продажа</span>
           <h2 class="section__title">Объявления</h2>
-          <p class="section__desc">33 позиции в наличии — цены в белорусских рублях (Br)</p>
+          <p class="section__desc" id="sale-count">Загрузка объявлений…</p>
         </div>
         <div class="catalog-filters reveal" id="sale-filter">
           <button type="button" class="filter-btn filter-btn--active" data-filter="all">Все</button>
@@ -208,7 +211,7 @@
         <div class="section__header reveal">
           <span class="section__tag">Каталог</span>
           <h2 class="section__title">Продажа Б/У</h2>
-          <p class="section__desc">Б/У техника с диагностикой — цены в белорусских рублях (Br)</p>
+          <p class="section__desc" id="used-count">Загрузка каталога…</p>
         </div>
         <div class="catalog-filters reveal" id="catalog-filter">
           <button type="button" class="filter-btn filter-btn--active" data-filter="all">Все</button>
@@ -348,7 +351,7 @@
   <script src="js/home.js"></script>
   <script src="js/main.js"></script>
   <script src="js/sale-catalog.js"></script>
-  <script src="js/catalog.js"></script>
+  <script src="js/used-catalog.js"></script>
   <script src="js/extras.js"></script>
 </body>
 </html>

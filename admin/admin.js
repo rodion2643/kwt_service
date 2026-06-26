@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  const SITE_URL = 'https://rodion2643.github.io/kwt-service1/';
+  const SITE_URL = 'https://rodion2643.github.io/kwt_service/';
   const cfg = window.KWT_LISTINGS_CONFIG || {};
   const SESSION_KEY = 'kwt_admin_pw';
 
@@ -186,8 +186,22 @@
 
   async function loadListings() {
     if (!saleListEl && !usedListEl) return;
-    if (saleListEl) saleListEl.innerHTML = '<p class="muted">Загрузка…</p>';
-    if (usedListEl) usedListEl.innerHTML = '<p class="muted">Загрузка…</p>';
+
+    const renderMerged = (remoteItems, hiddenIds) => {
+      const saleItems = mergeVisibleList(remoteItems, hiddenIds, 'sale');
+      const usedItems = mergeVisibleList(remoteItems, hiddenIds, 'used');
+      renderList(saleListEl, saleItems, 'продаже');
+      renderList(usedListEl, usedItems, 'Б/У');
+      updateListCounts(saleItems.length, usedItems.length);
+      return { saleItems, usedItems };
+    };
+
+    if (typeof KWT !== 'undefined') {
+      renderMerged([], []);
+    } else {
+      if (saleListEl) saleListEl.innerHTML = '<p class="muted">Загрузка…</p>';
+      if (usedListEl) usedListEl.innerHTML = '<p class="muted">Загрузка…</p>';
+    }
 
     let remoteItems = [];
     let hiddenIds = [];
@@ -206,19 +220,13 @@
       apiNote = e.message || 'Нет связи с Google';
     }
 
-    const saleItems = mergeVisibleList(remoteItems, hiddenIds, 'sale');
-    const usedItems = mergeVisibleList(remoteItems, hiddenIds, 'used');
-
-    renderList(saleListEl, saleItems, 'продаже');
-    renderList(usedListEl, usedItems, 'Б/У');
+    renderMerged(remoteItems, hiddenIds);
 
     if (apiNote && scriptWarn) {
       scriptWarn.hidden = false;
       scriptWarn.querySelector('p').innerHTML =
         `<strong>Внимание:</strong> ${esc(apiNote)}. Ниже — объявления с сайта.`;
     }
-
-    updateListCounts(saleItems.length, usedItems.length);
   }
 
   function updateListCounts(saleN, usedN) {

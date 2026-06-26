@@ -142,23 +142,38 @@
   if (slug === 'sale') {
     const grid = document.getElementById('sale-grid');
     if (grid) {
-      (async () => {
-        const catalog = window.KWTListings
-          ? await KWTListings.getSaleCatalog()
-          : (KWT.saleCatalog || []);
-        grid.innerHTML = catalog.map(item => KWTProducts.renderCard(item, 'продажа')).join('');
+      const renderSale = items => {
+        grid.innerHTML = items.length
+          ? items.map(item => KWTProducts.renderCard(item, 'продажа')).join('')
+          : '<p class="form-hint">Объявлений пока нет.</p>';
         KWTProducts.bindOrderButtons(grid, 'продажа');
         if (window.kwtObserveReveal) window.kwtObserveReveal(grid.querySelectorAll('.reveal'));
-      })();
+      };
+      const catalog = window.KWTListings?.getSaleCatalogSync?.()
+        ?? (typeof KWT !== 'undefined' && KWT.saleCatalog) || [];
+      renderSale(catalog);
+      if (window.KWTListings?.getSaleCatalog) {
+        KWTListings.getSaleCatalog().then(renderSale);
+      }
     }
   }
 
-  if (slug === 'used' && KWT.catalog) {
+  if (slug === 'used') {
     const grid = document.getElementById('catalog-grid');
     if (grid) {
-      grid.innerHTML = KWT.catalog.map(item => KWTProducts.renderCard(item, 'каталог Б/У')).join('');
-      KWTProducts.bindOrderButtons(grid, 'каталог Б/У');
-      if (window.kwtObserveReveal) window.kwtObserveReveal(grid.querySelectorAll('.reveal'));
+      const renderUsed = items => {
+        grid.innerHTML = items.length
+          ? items.map(item => KWTProducts.renderCard(item, 'каталог Б/У')).join('')
+          : '<p class="form-hint">Б/У позиций пока нет.</p>';
+        KWTProducts.bindOrderButtons(grid, 'каталог Б/У');
+        if (window.kwtObserveReveal) window.kwtObserveReveal(grid.querySelectorAll('.reveal'));
+      };
+      const catalog = window.KWTListings?.getUsedCatalogSync?.()
+        ?? (typeof KWT !== 'undefined' && KWT.catalog) || [];
+      renderUsed(catalog);
+      if (window.KWTListings?.getUsedCatalog) {
+        KWTListings.getUsedCatalog().then(renderUsed);
+      }
     }
   }
 })();
