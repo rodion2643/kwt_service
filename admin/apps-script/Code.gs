@@ -17,6 +17,27 @@ function upgradeOnce() {
   setupOnce();
 }
 
+/** Проверка: создаёт листы и одну тестовую строку. Журнал → OK: test row written */
+function testWriteOnce() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  setupOnce();
+  var sheet = ss.getSheetByName(SHEET_NAME);
+  var testId = 'test-' + new Date().getTime();
+  sheet.appendRow([
+    testId,
+    'Тест — можно удалить',
+    'Самокат',
+    '100 Br',
+    '',
+    'Тестовая запись',
+    'продажа',
+    'sale',
+    true,
+    new Date().toISOString()
+  ]);
+  Logger.log('OK: test row written, id=' + testId);
+}
+
 function setPasswordOnce() {
   PropertiesService.getScriptProperties().setProperty('ADMIN_PASSWORD', 'ewASDV@!LOXW12)');
   Logger.log('OK: password saved');
@@ -29,6 +50,12 @@ function ensureListingsSheet_(ss) {
     sheet.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]);
     sheet.setFrozenRows(1);
     return;
+  }
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(String);
+  if (headers.indexOf('id') < 0) {
+    sheet.insertRowBefore(1);
+    sheet.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]);
+    sheet.setFrozenRows(1);
   }
   ensureCategoryColumn_(sheet);
 }
@@ -85,26 +112,54 @@ function ensureHiddenSheet_(ss) {
 function doGet(e) {
   e = e || {};
   var p = e.parameter || {};
+  if (p.action === 'ping') {
+    return json_(apiInfo_());
+  }
   if (p.action === 'remove' || p.action === 'hide' || p.action === 'delete') {
     if (!checkPassword_(p.password)) {
       return json_({ ok: false, error: 'Wrong password' });
     }
     return json_(removeListing_(p.id));
   }
-  return json_({
-    items: getActiveListings_(),
-    hidden: getHiddenIds_()
-  });
+  try {
+    return json_({
+      ok: true,
+      version: 3,
+      items: getActiveListings_(),
+      hidden: getHiddenIds_()
+    });
+  } catch (err) {
+    return json_({ ok: false, version: 3, items: [], hidden: [], error: String(err) });
+  }
+}
+
+function apiInfo_() {
+  return {
+    ok: true,
+    version: 3,
+    features: ['list', 'add', 'update', 'remove', 'hide', 'delete', 'hidden', 'category']
+  };
+}
+
+function parseBody_(e) {
+  if (!e || !e.postData || !e.postData.contents) return null;
+  return JSON.parse(e.postData.contents);
 }
 
 function doPost(e) {
   try {
-    var body = JSON.parse(e.postData.contents);
+    var body = parseBody_(e);
+    if (!body) {
+      return json_({ ok: false, error: 'Empty POST. Deploy web app: Execute as Me, Access Anyone.' });
+    }
+    if (body.action === 'ping') {
+      return json_(apiInfo_());
+    }
     if (!checkPassword_(body.password)) {
       return json_({ ok: false, error: 'Wrong password' });
     }
     if (body.action === 'list') {
-      return json_({ ok: true, items: getAllListings_(), hidden: getHiddenIds_() });
+      return json_({ ok: true, version: 3, items: getAllListings_(), hidden: getHiddenIds_() });
     }
     if (body.action === 'add') return json_(addListing_(body));
     if (body.action === 'update') return json_(upsertListing_(body));
