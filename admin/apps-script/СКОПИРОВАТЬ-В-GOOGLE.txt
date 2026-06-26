@@ -1,0 +1,250 @@
+var SHEET_NAME = 'listings';
+var HIDDEN_SHEET = 'hidden';
+
+function setupOnce() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  ensureListingsSheet_(ss);
+  ensureHiddenSheet_(ss);
+  Logger.log('OK');
+}
+
+function upgradeOnce() {
+  setupOnce();
+}
+
+function setPasswordOnce() {
+  PropertiesService.getScriptProperties().setProperty('ADMIN_PASSWORD', 'ewASDV@!LOXW12)');
+  Logger.log('OK');
+}
+
+function ensureListingsSheet_(ss) {
+  var sheet = ss.getSheetByName(SHEET_NAME);
+  if (!sheet) sheet = ss.insertSheet(SHEET_NAME);
+  var headers = ['id', 'name', 'type', 'price', 'image', 'specs', 'badge', 'active', 'created'];
+  if (sheet.getLastRow() === 0) {
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.setFrozenRows(1);
+  }
+}
+
+function ensureHiddenSheet_(ss) {
+  var sheet = ss.getSheetByName(HIDDEN_SHEET);
+  if (!sheet) sheet = ss.insertSheet(HIDDEN_SHEET);
+  if (sheet.getLastRow() === 0) {
+    sheet.getRange(1, 1).setValues([['id']]);
+    sheet.setFrozenRows(1);
+  }
+}
+
+function doGet() {
+  return json_({
+    items: getActiveListings_(),
+    hidden: getHiddenIds_()
+  });
+}
+
+function doPost(e) {
+  try {
+    var body = JSON.parse(e.postData.contents);
+    if (!checkPassword_(body.password)) {
+      return json_({ ok: false, error: 'Wrong password' });
+    }
+    if (body.action === 'list') {
+      return json_({ ok: true, items: getAllListings_(), hidden: getHiddenIds_() });
+    }
+    if (body.action === 'add') {
+      return json_(addListing_(body));
+    }
+    if (body.action === 'update') {
+      return json_(upsertListing_(body));
+    }
+    if (body.action === 'remove') {
+      return json_(removeListing_(body.id));
+    }
+    if (body.action === 'delete') {
+      return json_(removeListing_(body.id));
+    }
+    return json_({ ok: false, error: 'Unknown action' });
+  } catch (err) {
+    return json_({ ok: false, error: String(err) });
+  }
+}
+
+function checkPassword_(pw) {
+  var saved = PropertiesService.getScriptProperties().getProperty('ADMIN_PASSWORD');
+  return saved && pw === saved;
+}
+
+function getSheet_() {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
+  if (!sheet) throw new Error('Run upgradeOnce first');
+  return sheet;
+}
+
+function getHiddenSheet_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  ensureHiddenSheet_(ss);
+  return ss.getSheetByName(HIDDEN_SHEET);
+}
+
+function getHiddenIds_() {
+  var sheet = getHiddenSheet_();
+  var data = sheet.getDataRange().getValues();
+  var out = [];
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][0]) out.push(String(data[i][0]));
+  }
+  return out;
+}
+
+function hideId_(id) {
+  var sheet = getHiddenSheet_();
+  var data = sheet.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === String(id)) return;
+  }
+  sheet.appendRow([String(id)]);
+}
+
+function rowToItem_(row, headers) {
+  var idx = function(name) { return headers.indexOf(name); };
+  var specsRaw = row[idx('specs')] || '';
+  var specs = specsRaw ? String(specsRaw).split('|').map(function(s) { return s.trim(); }).filter(Boolean) : [];
+  return {
+    id: String(row[idx('id')] || ''),
+    name: String(row[idx('name')] || ''),
+    type: String(row[idx('type')] || 'Samokat'),
+    price: String(row[idx('price')] || ''),
+    image: String(row[idx('image')] || ''),
+    badge: String(row[idx('badge')] || 'sale'),
+    specs: specs,
+    active: row[idx('active')] === true || String(row[idx('active')]).toUpperCase() === 'TRUE',
+    created: String(row[idx('created')] || '')
+  };
+}
+
+function getActiveListings_() {
+  var sheet = getSheet_();
+  var data = sheet.getDataRange().getValues();
+  if (data.length < 2) return [];
+  var headers = data[0];
+  var out = [];
+  for (var i = 1; i < data.length; i++) {
+    var item = rowToItem_(data[i], headers);
+    if (item.active && item.name) out.push(item);
+  }
+  out.sort(function(a, b) { return b.created.localeCompare(a.created); });
+  return out;
+}
+
+function getAllListings_() {
+  var sheet = getSheet_();
+  var data = sheet.getDataRange().getValues();
+  if (data.length < 2) return [];
+  var headers = data[0];
+  var out = [];
+  for (var i = 1; i < data.length; i++) {
+    var item = rowToItem_(data[i], headers);
+    if (item.name) out.push(item);
+  }
+  out.sort(function(a, b) { return b.created.localeCompare(a.created); });
+  return out;
+}
+
+function findRowById_(sheet, id) {
+  var data = sheet.getDataRange().getValues();
+  var headers = data[0];
+  var idCol = headers.indexOf('id');
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][idCol]) === String(id)) {
+      return { row: i + 1, headers: headers };
+    }
+  }
+  return null;
+}
+
+function addListing_(body) {
+  var sheet = getSheet_();
+  var id = 'adm-' + new Date().getTime();
+  return writeListing_(sheet, id, body, true);
+}
+
+function upsertListing_(body) {
+  if (!body.id) return { ok: false, error: 'No id' };
+  var sheet = getSheet_();
+  var found = findRowById_(sheet, body.id);
+  if (found) {
+    return writeListing_(sheet, body.id, body, false, found.row);
+  }
+  return writeListing_(sheet, body.id, body, true);
+}
+
+function writeListing_(sheet, id, body, isNew, rowNum) {
+  var imageUrl = body.image || '';
+  if (body.imageBase64) {
+    imageUrl = saveImage_(body.imageBase64, body.imageName || id + '.jpg');
+  }
+  if (!imageUrl && isNew) {
+    return { ok: false, error: 'Need photo' };
+  }
+  var specs = (body.specs || []).join('|');
+  var now = new Date().toISOString();
+  var row = [id, body.name, body.type || 'Samokat', body.price, imageUrl, specs, body.badge || 'sale', true, now];
+
+  if (isNew) {
+    sheet.appendRow(row);
+  } else {
+    var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    var old = sheet.getRange(rowNum, 1, rowNum, headers.length).getValues()[0];
+    var createdCol = headers.indexOf('created');
+    if (createdCol >= 0 && old[createdCol]) row[8] = old[createdCol];
+    if (!imageUrl) {
+      var imageCol = headers.indexOf('image');
+      if (imageCol >= 0) row[4] = old[imageCol];
+    }
+    sheet.getRange(rowNum, 1, rowNum, row.length).setValues([row]);
+  }
+
+  var hidden = getHiddenIds_();
+  if (hidden.indexOf(String(id)) >= 0) {
+    unhideId_(id);
+  }
+  return { ok: true, id: id, image: imageUrl || row[4] };
+}
+
+function unhideId_(id) {
+  var sheet = getHiddenSheet_();
+  var data = sheet.getDataRange().getValues();
+  for (var i = data.length - 1; i >= 1; i--) {
+    if (String(data[i][0]) === String(id)) {
+      sheet.deleteRow(i + 1);
+    }
+  }
+}
+
+function removeListing_(id) {
+  hideId_(id);
+  var sheet = getSheet_();
+  var found = findRowById_(sheet, id);
+  if (found) {
+    var activeCol = found.headers.indexOf('active') + 1;
+    sheet.getRange(found.row, activeCol).setValue(false);
+  }
+  return { ok: true };
+}
+
+function saveImage_(base64, filename) {
+  var parts = base64.split(',');
+  var meta = parts[0] || '';
+  var mime = meta.indexOf('png') >= 0 ? 'image/png' : 'image/jpeg';
+  var bytes = Utilities.base64Decode(parts.pop());
+  var blob = Utilities.newBlob(bytes, mime, filename);
+  var file = DriveApp.createFile(blob);
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  return 'https://drive.google.com/thumbnail?id=' + file.getId() + '&sz=w1400';
+}
+
+function json_(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}
