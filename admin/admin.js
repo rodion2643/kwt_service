@@ -71,7 +71,12 @@
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify(body),
     });
-    return res.json();
+    const text = await res.text();
+    try {
+      return JSON.parse(text);
+    } catch {
+      throw new Error('Google вернул не JSON. Сделайте «Развернуть → Новое развёртывание» в Apps Script.');
+    }
   }
 
   function showApp(show) {
@@ -117,7 +122,8 @@
 
   function buildListing(fd) {
     const type = fd.get('type')?.toString() || 'Самокат';
-    const category = fd.get('category')?.toString() || 'sale';
+    const tabCat = categoryTabs?.querySelector('.category-tab--active')?.dataset.cat;
+    const category = fd.get('category')?.toString() || tabCat || 'sale';
     const model = fd.get('model')?.toString().trim();
     const prefix = TYPE_PREFIX[type] || 'Электротранспорт';
     const name = model.toLowerCase().startsWith(prefix.toLowerCase().slice(0, 8))
@@ -164,7 +170,11 @@
   }
 
   function itemCategory(item) {
-    if (item.category === 'used' || item.badge === 'Б/У') return 'used';
+    const cat = String(item.category || '').toLowerCase().trim();
+    if (cat === 'used') return 'used';
+    if (cat === 'sale') return 'sale';
+    const badge = String(item.badge || '').toLowerCase().trim();
+    if (badge === 'б/у' || badge === 'used' || badge === 'bu' || badge === 'b/u') return 'used';
     return 'sale';
   }
 
@@ -176,10 +186,15 @@
       .filter(i => !hidden.has(i.id) && !remoteIds.has(i.id))
       .map(i => ({ ...i, source: 'site' }));
 
-    const remoteMapped = remoteActive.map(i => ({
-      ...i,
-      source: String(i.id).startsWith('adm-') ? 'new' : 'edited',
-    }));
+    const remoteMapped = remoteActive.map(i => {
+      const cat = itemCategory(i);
+      return {
+        ...i,
+        category: cat,
+        badge: cat === 'used' ? 'Б/У' : 'продажа',
+        source: String(i.id).startsWith('adm-') ? 'new' : 'edited',
+      };
+    });
 
     return [...remoteMapped, ...staticItems];
   }
@@ -347,13 +362,22 @@
   async function removeListing(id) {
     if (!confirm('Убрать с сайта?')) return;
     const pw = getPassword();
+    let lastError = '';
     try {
-      let data = await api({ action: 'remove', password: pw, id });
-      if (!data.ok) data = await api({ action: 'hide', password: pw, id });
-      if (!data.ok) data = await api({ action: 'delete', password: pw, id });
-      if (!data.ok) throw new Error('Не удалось снять. Обновите Google-скрипт.');
-      if (editIdInput.value === id) resetForm();
-      loadListings();
+      for (const action of ['remove', 'hide', 'delete']) {
+        const data = await api({ action, password: pw, id });
+        if (data?.ok) {
+          if (editIdInput.value === id) resetForm();
+          loadListings();
+          return;
+        }
+        lastError = data?.error || lastError;
+      }
+      throw new Error(
+        lastError
+          ? `Не удалось снять: ${lastError}. Вставьте новый Code.gs → upgradeOnce → Новое развёртывание.`
+          : 'Не удалось снять. Вставьте новый Code.gs → upgradeOnce → Новое развёртывание.'
+      );
     } catch (e) {
       alert(e.message || 'Ошибка удаления');
     }
@@ -421,6 +445,7 @@
       const fd = new FormData(addForm);
       const listing = buildListing(fd);
       const photo = fd.get('photo');
+      const category = listing.category === 'used' ? 'used' : 'sale';
 
       const payload = {
         password: getPassword(),
@@ -428,8 +453,8 @@
         price: listing.price,
         type: listing.type,
         specs: listing.specs,
-        category: listing.category,
-        badge: listing.category === 'used' ? 'Б/У' : 'продажа',
+        category,
+        badge: category === 'used' ? 'Б/У' : 'продажа',
       };
 
       if (photo instanceof File && photo.size) {

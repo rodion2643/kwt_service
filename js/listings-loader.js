@@ -17,7 +17,11 @@
   }
 
   function itemCategory(item) {
-    if (item.category === 'used' || item.badge === 'Б/У') return 'used';
+    const cat = String(item.category || '').toLowerCase().trim();
+    if (cat === 'used') return 'used';
+    if (cat === 'sale') return 'sale';
+    const badge = String(item.badge || '').toLowerCase().trim();
+    if (badge === 'б/у' || badge === 'used' || badge === 'bu' || badge === 'b/u') return 'used';
     return 'sale';
   }
 
