@@ -1,46 +1,59 @@
-// KWT Service — Google Таблица + Drive
-// БЕЗ getUi().alert — иначе ошибка при запуске
-// Порядок: upgradeOnce → setPasswordOnce → Deploy → New deployment
+// KWT Service — объявления в Google Таблице
+// Запускать ТОЛЬКО из таблицы: Расширения → Apps Script
+// 1) upgradeOnce  2) setPasswordOnce  3) testWriteOnce  4) Развернуть → Новое развёртывание
 
 var SHEET_NAME = 'listings';
 var HIDDEN_SHEET = 'hidden';
 var HEADERS = ['id', 'name', 'type', 'price', 'image', 'specs', 'badge', 'category', 'active', 'created'];
 
-function setupOnce() {
+function getSpreadsheet_() {
+  var props = PropertiesService.getScriptProperties();
+  var id = props.getProperty('SPREADSHEET_ID');
+  if (id) {
+    try {
+      return SpreadsheetApp.openById(id);
+    } catch (e) {
+      throw new Error('Таблица не найдена по ID. Запустите upgradeOnce из вашей таблицы.');
+    }
+  }
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  ensureListingsSheet_(ss);
-  ensureHiddenSheet_(ss);
-  Logger.log('OK: setupOnce');
+  if (!ss) {
+    throw new Error('Скрипт не привязан к таблице. Откройте таблицу → Расширения → Apps Script → upgradeOnce');
+  }
+  return ss;
 }
 
 function upgradeOnce() {
-  setupOnce();
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) {
+    Logger.log('ОШИБКА: откройте скрипт ИЗ Google Таблицы (Расширения → Apps Script)');
+    return;
+  }
+  PropertiesService.getScriptProperties().setProperty('SPREADSHEET_ID', ss.getId());
+  ensureListingsSheet_(ss);
+  ensureHiddenSheet_(ss);
+  Logger.log('OK: таблица привязана, id=' + ss.getId());
 }
 
-/** Проверка: создаёт листы и одну тестовую строку. Журнал → OK: test row written */
+function setupOnce() {
+  upgradeOnce();
+}
+
 function testWriteOnce() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  setupOnce();
+  var ss = getSpreadsheet_();
+  ensureListingsSheet_(ss);
   var sheet = ss.getSheetByName(SHEET_NAME);
   var testId = 'test-' + new Date().getTime();
   sheet.appendRow([
-    testId,
-    'Тест — можно удалить',
-    'Самокат',
-    '100 Br',
-    '',
-    'Тестовая запись',
-    'продажа',
-    'sale',
-    true,
-    new Date().toISOString()
+    testId, 'Тест — можно удалить', 'Самокат', '100 Br', '',
+    'Тестовая запись', 'продажа', 'sale', true, new Date().toISOString()
   ]);
-  Logger.log('OK: test row written, id=' + testId);
+  Logger.log('OK: строка записана, id=' + testId);
 }
 
 function setPasswordOnce() {
   PropertiesService.getScriptProperties().setProperty('ADMIN_PASSWORD', 'ewASDV@!LOXW12)');
-  Logger.log('OK: password saved');
+  Logger.log('OK: пароль сохранён');
 }
 
 function ensureListingsSheet_(ss) {
@@ -109,16 +122,40 @@ function ensureHiddenSheet_(ss) {
   }
 }
 
+function apiInfo_() {
+  return {
+    ok: true,
+    version: 3,
+    features: ['list', 'add', 'update', 'remove', 'hide', 'delete', 'hidden', 'category']
+  };
+}
+
+function statusInfo_() {
+  try {
+    var ss = getSpreadsheet_();
+    var listings = ss.getSheetByName(SHEET_NAME);
+    var hidden = ss.getSheetByName(HIDDEN_SHEET);
+    return {
+      ok: true,
+      version: 3,
+      spreadsheetId: ss.getId(),
+      hasListingsSheet: !!listings,
+      listingsRows: listings ? Math.max(0, listings.getLastRow() - 1) : 0,
+      hasHiddenSheet: !!hidden,
+      hasPassword: !!PropertiesService.getScriptProperties().getProperty('ADMIN_PASSWORD')
+    };
+  } catch (err) {
+    return { ok: false, version: 3, error: String(err) };
+  }
+}
+
 function doGet(e) {
   e = e || {};
   var p = e.parameter || {};
-  if (p.action === 'ping') {
-    return json_(apiInfo_());
-  }
+  if (p.action === 'ping') return json_(apiInfo_());
+  if (p.action === 'status') return json_(statusInfo_());
   if (p.action === 'remove' || p.action === 'hide' || p.action === 'delete') {
-    if (!checkPassword_(p.password)) {
-      return json_({ ok: false, error: 'Wrong password' });
-    }
+    if (!checkPassword_(p.password)) return json_({ ok: false, error: 'Wrong password' });
     return json_(removeListing_(p.id));
   }
   try {
@@ -133,14 +170,6 @@ function doGet(e) {
   }
 }
 
-function apiInfo_() {
-  return {
-    ok: true,
-    version: 3,
-    features: ['list', 'add', 'update', 'remove', 'hide', 'delete', 'hidden', 'category']
-  };
-}
-
 function parseBody_(e) {
   if (!e || !e.postData || !e.postData.contents) return null;
   return JSON.parse(e.postData.contents);
@@ -150,14 +179,11 @@ function doPost(e) {
   try {
     var body = parseBody_(e);
     if (!body) {
-      return json_({ ok: false, error: 'Empty POST. Deploy web app: Execute as Me, Access Anyone.' });
+      return json_({ ok: false, error: 'Empty POST. Deploy: Execute as Me, Access Anyone.' });
     }
-    if (body.action === 'ping') {
-      return json_(apiInfo_());
-    }
-    if (!checkPassword_(body.password)) {
-      return json_({ ok: false, error: 'Wrong password' });
-    }
+    if (body.action === 'ping') return json_(apiInfo_());
+    if (body.action === 'status') return json_(statusInfo_());
+    if (!checkPassword_(body.password)) return json_({ ok: false, error: 'Wrong password' });
     if (body.action === 'list') {
       return json_({ ok: true, version: 3, items: getAllListings_(), hidden: getHiddenIds_() });
     }
@@ -178,14 +204,15 @@ function checkPassword_(pw) {
 }
 
 function getSheet_() {
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
-  if (!sheet) throw new Error('Run upgradeOnce first');
+  var ss = getSpreadsheet_();
+  var sheet = ss.getSheetByName(SHEET_NAME);
+  if (!sheet) throw new Error('Нет листа listings. Запустите upgradeOnce');
   ensureCategoryColumn_(sheet);
   return sheet;
 }
 
 function getHiddenSheet_() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getSpreadsheet_();
   ensureHiddenSheet_(ss);
   return ss.getSheetByName(HIDDEN_SHEET);
 }
@@ -338,7 +365,7 @@ function unhideId_(id) {
 
 function removeListing_(id) {
   if (!id) return { ok: false, error: 'No id' };
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getSpreadsheet_();
   ensureHiddenSheet_(ss);
   hideId_(String(id));
   var sheet = ss.getSheetByName(SHEET_NAME);
