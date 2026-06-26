@@ -82,7 +82,15 @@ function ensureHiddenSheet_(ss) {
   }
 }
 
-function doGet() {
+function doGet(e) {
+  e = e || {};
+  var p = e.parameter || {};
+  if (p.action === 'remove' || p.action === 'hide' || p.action === 'delete') {
+    if (!checkPassword_(p.password)) {
+      return json_({ ok: false, error: 'Wrong password' });
+    }
+    return json_(removeListing_(p.id));
+  }
   return json_({
     items: getActiveListings_(),
     hidden: getHiddenIds_()

@@ -71,12 +71,35 @@
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify(body),
     });
-    const text = await res.text();
+    return parseApiResponse(await res.text());
+  }
+
+  async function apiGet(params) {
+    if (!apiUrl()) throw new Error('Сайт не подключён.');
+    const qs = new URLSearchParams(params).toString();
+    const res = await fetch(`${apiUrl()}?${qs}`);
+    return parseApiResponse(await res.text());
+  }
+
+  function parseApiResponse(text) {
     try {
       return JSON.parse(text);
     } catch {
       throw new Error('Google вернул не JSON. Сделайте «Развернуть → Новое развёртывание» в Apps Script.');
     }
+  }
+
+  async function apiAction(body) {
+    let data = await api(body);
+    if (data?.ok) return data;
+    if (body.action === 'remove' || body.action === 'hide' || body.action === 'delete') {
+      data = await apiGet({
+        action: body.action,
+        password: body.password,
+        id: body.id,
+      });
+    }
+    return data;
   }
 
   function showApp(show) {
@@ -365,7 +388,7 @@
     let lastError = '';
     try {
       for (const action of ['remove', 'hide', 'delete']) {
-        const data = await api({ action, password: pw, id });
+        const data = await apiAction({ action, password: pw, id });
         if (data?.ok) {
           if (editIdInput.value === id) resetForm();
           loadListings();
@@ -375,8 +398,8 @@
       }
       throw new Error(
         lastError
-          ? `Не удалось снять: ${lastError}. Вставьте новый Code.gs → upgradeOnce → Новое развёртывание.`
-          : 'Не удалось снять. Вставьте новый Code.gs → upgradeOnce → Новое развёртывание.'
+          ? `Не удалось снять: ${lastError}\n\n1) Вставь новый Code.gs\n2) Запусти upgradeOnce\n3) Развернуть → Новое развёртывание\n4) Залей admin.js на admin111`
+          : 'Не удалось снять. Запусти upgradeOnce и сделай Новое развёртывание Google-скрипта. Затем залей admin.js на GitHub (admin111).'
       );
     } catch (e) {
       alert(e.message || 'Ошибка удаления');
